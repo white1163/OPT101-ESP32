@@ -11,7 +11,6 @@ const char index_html[] PROGMEM = R"rawliteral(
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OPT101 实时波形</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <style>
         body {
             font-family: 'Segoe UI', sans-serif;
@@ -37,7 +36,7 @@ const char index_html[] PROGMEM = R"rawliteral(
         }
         .connected { color: #4caf50; }
         .disconnected { color: #f44336; }
-        canvas { max-height: 500px; width: 100%; }
+        canvas { max-height: 500px; width: 100%; background:#222; }
         .info {
             display: flex;
             justify-content: space-between;
@@ -60,75 +59,85 @@ const char index_html[] PROGMEM = R"rawliteral(
 </div>
 
 <script>
-    const MAX_POINTS = 200;
-    let ws;
-    let chart;
+const MAX_POINTS = 200;
+const Y_MAX = 4000;//~原3100
+let dataBuffer = [];
+let ws, ctx, canvasW, canvasH;
 
-    function initChart() {
-        const ctx = document.getElementById('waveCanvas').getContext('2d');
-        chart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                datasets: [{
-                    label: '电压 (V)',
-                    data: [],
-                    borderColor: '#4caf50',
-                    backgroundColor: 'rgba(76, 175, 80, 0.1)',
-                    borderWidth: 2,
-                    pointRadius: 0,
-                    tension: 0.2,
-                    fill: true
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: true,
-                scales: {
-                    x: { title: { display: true, text: '数据点序号', color: '#ccc' }, grid: { color: '#444' } },
-                    y: { title: { display: true, text: '电压 (V)', color: '#ccc' }, min: 0, max: 3.3, grid: { color: '#444' } }
-                },
-                plugins: {
-                    tooltip: { mode: 'index', intersect: false },
-                    legend: { labels: { color: '#eee' } }
-                }
-            }
-        });
+// 初始化画布
+function initCanvas(){
+    const canvas = document.getElementById("waveCanvas");
+    ctx = canvas.getContext("2d");
+    canvasW = canvas.width;
+    canvasH = canvas.height;
+}
+
+// 绘制波形
+function drawWave(){
+    ctx.clearRect(0,0,canvasW,canvasH);
+    // 绘制网格
+    ctx.strokeStyle = "#444";
+    ctx.lineWidth = 1;
+    for(let i=0;i<canvasW;i+=40){
+        ctx.beginPath();ctx.moveTo(i,0);ctx.lineTo(i,canvasH);ctx.stroke();
+    }
+    for(let i=0;i<canvasH;i+=40){
+        ctx.beginPath();ctx.moveTo(0,i);ctx.lineTo(canvasW,i);ctx.stroke();
     }
 
-    function addDataPoint(value) {
-        if (!chart) return;
-        let dataset = chart.data.datasets[0];
-        let newData = dataset.data.concat(value);
-        if (newData.length > MAX_POINTS) newData.shift();
-        dataset.data = newData;
-        chart.update('none');
-        document.getElementById('currentValue').innerHTML = value.toFixed(3) + ' V';
-    }
+    // 绘制曲线
+    if(dataBuffer.length < 2) return;
+    const stepX = canvasW / MAX_POINTS;
+    const scaleY = canvasH / Y_MAX;
 
-    function connectWebSocket() {
-        ws = new WebSocket('ws://' + window.location.hostname + ':81');
-        ws.onopen = function() {
-            document.getElementById('statusLabel').innerHTML = '🟢 已连接';
-            document.getElementById('statusLabel').className = 'status connected';
-        };
-        ws.onmessage = function(event) {
-            let val = parseFloat(event.data);
-            if (!isNaN(val)) addDataPoint(val);
-        };
-        ws.onclose = function() {
-            document.getElementById('statusLabel').innerHTML = '🔴 连接断开，5秒后重连';
-            document.getElementById('statusLabel').className = 'status disconnected';
-            setTimeout(connectWebSocket, 5000);
-        };
-        ws.onerror = function(err) {
-            console.error('WebSocket 错误', err);
-        };
+    ctx.beginPath();
+    ctx.strokeStyle = "#4caf50";
+    ctx.lineWidth = 2;
+    for(let i=0; i<dataBuffer.length; i++){
+        const x = i * stepX;
+        const y = canvasH - dataBuffer[i] * scaleY;
+        i === 0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
     }
+    ctx.stroke();
 
-    window.onload = function() {
-        initChart();
-        connectWebSocket();
+    // 填充下方底色
+    ctx.lineTo((dataBuffer.length-1)*stepX, canvasH);
+    ctx.lineTo(0, canvasH);
+    ctx.closePath();
+    ctx.fillStyle = "rgba(76,175,80,0.1)";
+    ctx.fill();
+}
+
+// 新增数据
+function pushData(val){
+    dataBuffer.push(val);
+    if(dataBuffer.length > MAX_POINTS) dataBuffer.shift();
+    drawWave();
+    document.getElementById("currentValue").innerText = val.toFixed(3) + " V";
+}
+
+// WebSocket连接
+function connectWs(){
+    ws = new WebSocket(`ws://${window.location.hostname}:81`);
+    ws.onopen = ()=>{
+        document.getElementById("statusLabel").innerText = "🟢 已连接";
+        document.getElementById("statusLabel").className = "status connected";
     };
+    ws.onmessage = (e)=>{
+        const num = parseFloat(e.data);
+        if(!isNaN(num)) pushData(num);
+    };
+    ws.onclose = ()=>{
+        document.getElementById("statusLabel").innerText = "🔴 断开，5秒重连";
+        document.getElementById("statusLabel").className = "status disconnected";
+        setTimeout(connectWs, 5000);
+    };
+}
+
+window.onload = ()=>{
+    initCanvas();
+    connectWs();
+}
 </script>
 </body>
 </html>

@@ -8,7 +8,7 @@ const char* password = "";
 // UDP 配置
 WiFiUDP udp;
 const uint16_t udpPort = 8888;
-const IPAddress broadcastIP(192, 168, 4, 255);
+const IPAddress broadcastIP(192, 168, 4, 255);//http://192.168.4.1
 
 // OPT101 引脚（确认是有效 ADC 引脚）
 #define OPT101_PIN  5
@@ -58,7 +58,8 @@ void setup() {
 void loop() {
   // 读取 ADC 并转换电压
   int adcValue = analogRead(OPT101_PIN);
-  float voltage = adcValue * (3.3f / 4095.0f);
+  float voltage = adcValue * (3.3f / 4095.0f);//~原计算方式
+  // float voltage = adcValue * (3.3f / 4095.0f)*0.001;//~修改小1000倍
   
   // 滞回比较得到当前高低状态
   bool nowHigh = isSignalHigh(voltage);
@@ -92,7 +93,9 @@ void loop() {
   
   // 定期广播（每 200ms）
   static unsigned long lastBroadcast = 0;
-  if (millis() - lastBroadcast >= 200) {
+  if (millis() - lastBroadcast >= 200) 
+  // if (millis() - lastBroadcast >= 1) 
+  {
     lastBroadcast = millis();
     
     char buffer[128];
